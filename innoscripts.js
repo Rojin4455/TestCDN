@@ -16,7 +16,7 @@
           return;
         }
         
-        const response = await fetch(`https://localhost:8000/accounts/unread-messages/${locationId}/`, {
+        const response = await fetch(`http://localhost:8000/accounts/unread-messages/${locationId}/`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json',
