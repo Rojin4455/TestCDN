@@ -1,12 +1,25 @@
 (function() {
     console.log("Script initialized");
     
+    // Keep track of the last count we saw
+    let lastUnreadCount = 0;
+    let lastTimestamp = 0;
+    let backoffInterval = 60000; // Start with 1 minute
+    let maxBackoffInterval = 5 * 60000; // Max 5 minutes
+    let activeInterval = null;
+    
     async function checkUnreadMessages() {
       console.log("checkUnreadMessages called....");
       try {
-        const locationId = "drnx22opCVrfXVtsBs0Y";
+        const url = window.location.href;
+        const locationId = url.match(/\/location\/([^\/]+)/)?.[1] || null;
         
-        const response = await fetch(`https://ghltech.com/accounts/unread-messages/${locationId}/`, {
+        if (!locationId) {
+          console.error("No location ID found in URL");
+          return;
+        }
+        
+        const response = await fetch(`http://localhost:8000/accounts/unread-messages/${locationId}/`, {
           method: 'GET',
           headers: {
             'Content-Type': 'application/json'
@@ -18,16 +31,44 @@
         }
         
         const data = await response.json();
-        console.log("success response: ", data);
+        console.log("Response from server:", data);
         
+        // Update UI based on unread count
         if (data.unreadCount > 0) {
           addNotificationDot(data.unreadCount);
         } else {
           removeNotificationDot();
         }
+        
+        // Adaptive polling logic
+        if (data.unreadCount !== lastUnreadCount) {
+          // Count changed - reset to frequent polling
+          backoffInterval = 60000;
+          scheduleNextCheck();
+        } else {
+          // Count stayed the same - back off gradually
+          backoffInterval = Math.min(backoffInterval * 1.5, maxBackoffInterval);
+          scheduleNextCheck();
+        }
+        
+        // Update our tracking variables
+        lastUnreadCount = data.unreadCount;
+        lastTimestamp = data.timestamp || Date.now();
+        
       } catch (error) {
         console.error('Error checking unread messages:', error);
+        // On error, still schedule next check but don't change the interval
+        scheduleNextCheck();
       }
+    }
+    
+    function scheduleNextCheck() {
+      if (activeInterval) {
+        clearTimeout(activeInterval);
+      }
+      
+      console.log(`Scheduling next check in ${backoffInterval/1000} seconds`);
+      activeInterval = setTimeout(checkUnreadMessages, backoffInterval);
     }
     
     function addNotificationDot(count) {
@@ -67,6 +108,16 @@
       }
     }
     
+    // Reset polling interval when user interacts with the page
+    function handleUserActivity() {
+      backoffInterval = 60000; // Reset to 1 minute
+      checkUnreadMessages(); // Check immediately
+    }
+    
+    // Listen for user activity
+    document.addEventListener('click', handleUserActivity);
+    document.addEventListener('keydown', handleUserActivity);
+    
     // Setup MutationObserver to detect when sidebar elements are added to DOM
     function setupObserver() {
       console.log("Setting up observer");
@@ -76,22 +127,18 @@
           console.log("Found sb_conversations, running checkUnreadMessages");
           checkUnreadMessages();
           observer.disconnect();
-          
-          setInterval(checkUnreadMessages, 60000);
         }
       });
       
       observer.observe(document.body, { childList: true, subtree: true });
     }
     
-    console.log("outside log");
-    
+    // Initialize based on document state
     if (document.readyState === "complete" || document.readyState === "interactive") {
       const conversationsItem = document.getElementById('sb_conversations');
       if (conversationsItem) {
         console.log("Document ready and found sb_conversations, running checkUnreadMessages");
         checkUnreadMessages();
-        setInterval(checkUnreadMessages, 60000);
       } else {
         console.log("Document ready but sb_conversations not found, setting up observer");
         setupObserver();
@@ -104,12 +151,18 @@
         if (conversationsItem) {
           console.log("Found sb_conversations, running checkUnreadMessages");
           checkUnreadMessages();
-          setInterval(checkUnreadMessages, 60000);
         } else {
           console.log("sb_conversations not found, setting up observer");
           setupObserver();
         }
       });
     }
-  })();
     
+    // Handle visibility changes (tab focus/unfocus)
+    document.addEventListener('visibilitychange', function() {
+      if (!document.hidden) {
+        // Page is now visible - check immediately
+        handleUserActivity();
+      }
+    });
+  })();
