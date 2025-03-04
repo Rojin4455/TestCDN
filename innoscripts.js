@@ -1,15 +1,12 @@
 (function() {
     console.log("Script initialized");
     
-    // Keep track of the last count we saw
     let lastUnreadCount = 0;
-    let lastTimestamp = 0;
-    let backoffInterval = 60000; // Start with 1 minute
-    let maxBackoffInterval = 5 * 60000; // Max 5 minutes
+    let pollingInterval = 60000; // 1 minute
     let activeInterval = null;
     
     async function checkUnreadMessages() {
-      console.log("checkUnreadMessages called....");
+      console.log("Checking unread messages...");
       try {
         const url = window.location.href;
         const locationId = url.match(/\/location\/([^\/]+)/)?.[1] || null;
@@ -19,10 +16,11 @@
           return;
         }
         
-        const response = await fetch(`http://localhost:8000/accounts/unread-messages/${locationId}/`, {
+        const response = await fetch(`https://localhost:8000/accounts/unread-messages/${locationId}/`, {
           method: 'GET',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Cache-Control': 'no-cache'  // Prevent browser caching
           }
         });
         
@@ -31,7 +29,7 @@
         }
         
         const data = await response.json();
-        console.log("Response from server:", data);
+        console.log("Unread messages response:", data);
         
         // Update UI based on unread count
         if (data.unreadCount > 0) {
@@ -40,35 +38,25 @@
           removeNotificationDot();
         }
         
-        // Adaptive polling logic
-        if (data.unreadCount !== lastUnreadCount) {
-          // Count changed - reset to frequent polling
-          backoffInterval = 60000;
-          scheduleNextCheck();
-        } else {
-          // Count stayed the same - back off gradually
-          backoffInterval = Math.min(backoffInterval * 1.5, maxBackoffInterval);
-          scheduleNextCheck();
-        }
-        
-        // Update our tracking variables
+        // Update last known count
         lastUnreadCount = data.unreadCount;
-        lastTimestamp = data.timestamp || Date.now();
         
       } catch (error) {
         console.error('Error checking unread messages:', error);
-        // On error, still schedule next check but don't change the interval
-        scheduleNextCheck();
       }
     }
     
-    function scheduleNextCheck() {
+    function startPolling() {
+      // Clear any existing interval
       if (activeInterval) {
-        clearTimeout(activeInterval);
+        clearInterval(activeInterval);
       }
       
-      console.log(`Scheduling next check in ${backoffInterval/1000} seconds`);
-      activeInterval = setTimeout(checkUnreadMessages, backoffInterval);
+      // Start new polling interval
+      activeInterval = setInterval(checkUnreadMessages, pollingInterval);
+      
+      // Run immediately on start
+      checkUnreadMessages();
     }
     
     function addNotificationDot(count) {
@@ -108,61 +96,39 @@
       }
     }
     
-    // Reset polling interval when user interacts with the page
-    function handleUserActivity() {
-      backoffInterval = 60000; // Reset to 1 minute
-      checkUnreadMessages(); // Check immediately
-    }
-    
-    // Listen for user activity
-    document.addEventListener('click', handleUserActivity);
-    document.addEventListener('keydown', handleUserActivity);
-    
-    // Setup MutationObserver to detect when sidebar elements are added to DOM
-    function setupObserver() {
-      console.log("Setting up observer");
-      const observer = new MutationObserver(function(mutations) {
-        const conversationsItem = document.getElementById('sb_conversations');
-        if (conversationsItem) {
-          console.log("Found sb_conversations, running checkUnreadMessages");
-          checkUnreadMessages();
-          observer.disconnect();
-        }
-      });
-      
-      observer.observe(document.body, { childList: true, subtree: true });
-    }
-    
-    // Initialize based on document state
-    if (document.readyState === "complete" || document.readyState === "interactive") {
+    // Setup initial polling
+    function initialize() {
       const conversationsItem = document.getElementById('sb_conversations');
       if (conversationsItem) {
-        console.log("Document ready and found sb_conversations, running checkUnreadMessages");
-        checkUnreadMessages();
+        console.log("Initializing unread messages polling");
+        startPolling();
       } else {
-        console.log("Document ready but sb_conversations not found, setting up observer");
-        setupObserver();
+        // If conversations item not found, set up an observer
+        const observer = new MutationObserver(function(mutations) {
+          const item = document.getElementById('sb_conversations');
+          if (item) {
+            console.log("Conversations item found, starting polling");
+            startPolling();
+            observer.disconnect();
+          }
+        });
+        
+        observer.observe(document.body, { childList: true, subtree: true });
       }
-    } else {
-      // Document not yet loaded, wait for DOMContentLoaded
-      document.addEventListener('DOMContentLoaded', function() {
-        console.log("DOMContentLoaded event fired");
-        const conversationsItem = document.getElementById('sb_conversations');
-        if (conversationsItem) {
-          console.log("Found sb_conversations, running checkUnreadMessages");
-          checkUnreadMessages();
-        } else {
-          console.log("sb_conversations not found, setting up observer");
-          setupObserver();
-        }
-      });
     }
     
-    // Handle visibility changes (tab focus/unfocus)
+    // Handle document ready states
+    if (document.readyState === "complete" || document.readyState === "interactive") {
+      initialize();
+    } else {
+      document.addEventListener('DOMContentLoaded', initialize);
+    }
+    
+    // Optional: Restart polling when page becomes visible
     document.addEventListener('visibilitychange', function() {
       if (!document.hidden) {
-        // Page is now visible - check immediately
-        handleUserActivity();
+        console.log("Page visible, restarting polling");
+        startPolling();
       }
     });
   })();
