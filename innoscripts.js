@@ -13,7 +13,7 @@
         return;
       }
       
-      const response = await fetch(`http://localhost:8000/accounts/unread-messages/${locationId}/`, {
+      const response = await fetch(`https://ghltech.com/accounts/unread-messages/${locationId}/`, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -67,13 +67,13 @@
       dot.style.position = 'absolute';
       dot.style.top = '10px';
       dot.style.right = '10px';
-      dot.style.width = count > 1 ? '16px' : '8px';
-      dot.style.height = count > 1 ? '16px' : '8px';
+      dot.style.width = count > 0 ? '16px' : '8px';
+      dot.style.height = count > 0 ? '16px' : '8px';
       dot.style.backgroundColor = '#ff3b30';
       dot.style.borderRadius = '50%';
       dot.style.display = 'block';
       
-      if (count > 1) {
+      if (count > 0) {
         dot.textContent = count > 99 ? '99+' : count;
         dot.style.textAlign = 'center';
         dot.style.fontSize = '10px';
@@ -93,7 +93,6 @@
     }
   }
   
-  // Setup initial polling
   function initialize() {
     const conversationsItem = document.getElementById('sb_conversations');
     if (conversationsItem) {
@@ -119,7 +118,6 @@
     document.addEventListener('DOMContentLoaded', initialize);
   }
   
-  // Optional: Restart polling when page becomes visible
   document.addEventListener('visibilitychange', function() {
     if (!document.hidden) {
       startPolling();
